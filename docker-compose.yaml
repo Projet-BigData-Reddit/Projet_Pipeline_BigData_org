@@ -1,65 +1,23 @@
-version: '3.8'
+version: "3.8"
+
 services:
-  # Service Kafka en mode KRaft (Broker + Controller)
   kafka:
-    image: bitnami/kafka:latest # Utilisation d'une image Bitnami récente et fiable
+    image: apache/kafka:4.1.0
     container_name: kafka-kraft
+    user: root
     ports:
-      # Port exposé à votre machine hôte pour que vos applications puissent se connecter
       - "9092:9092"
-    networks:
-      - kafka-net
-    volumes:
-      # Montage du volume pour que les données ne soient pas perdues si le conteneur redémarre
-      - "kafka_data:/bitnami/kafka"
     environment:
-      # ========================================================================
-      # ===               Configuration KRaft (sans ZooKeeper)               ===
-      # ========================================================================
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CLUSTER_ID: H4ieyO8dSlOfWTIzFPYtcQ
+    volumes:
+      - kafka_data:/tmp/kafka-logs
 
-      # 1. Rôles du noeud : il est à la fois broker et controller
-      - KAFKA_CFG_PROCESS_ROLES=broker,controller
-
-      # 2. ID unique du noeud dans le cluster
-      - KAFKA_CFG_NODE_ID=1
-
-      # 3. Liste des controllers pour le quorum. Dans un setup à un seul noeud, il se référence lui-même.
-      #    Le format est 'node_id@hostname:port'
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-
-      # 4. ID unique du cluster.
-      #    IMPORTANT : Générez le vôtre avec la commande :
-      #    docker run --rm bitnami/kafka:3.6 kafka-storage.sh random-uuid
-      - KAFKA_CLUSTER_ID=votre_propre_cluster_id_genere_ici
-
-      # ========================================================================
-      # ===                   Configuration des Listeners                    ===
-      # ========================================================================
-
-      # Listeners internes au conteneur
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-
-      # Adresse que Kafka communique aux clients externes (vos applications sur la machine hôte)
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
-
-      # Mapping entre les noms des listeners et les protocoles de sécurité
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-
-      # ========================================================================
-      # ===                  Configuration générale de Kafka                 ===
-      # ========================================================================
-
-      # Désactive la suppression automatique des topics
-      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
-      
-      # Nombre de partitions par défaut pour les nouveaux topics
-      - KAFKA_CFG_NUM_PARTITIONS=3
-# Définition du réseau pour permettre la communication entre les conteneurs
-networks:
-  kafka-net:
-    driver: bridge
-
-# Définition des volumes pour la persistance des données Kafka
 volumes:
   kafka_data:
-    driver: local
