@@ -1,4 +1,5 @@
 import os
+# Fichier: reddit_to_kafka_pipeline.py
 import praw
 import time
 import json
@@ -192,3 +193,4 @@ def stream_new_comments():
 if __name__ == "__main__":
     fetch_old_comments(limit=500)   # Récupère les 500 derniers commentaires pertinents
     stream_new_comments()           # Puis écoute en temps réel
+
