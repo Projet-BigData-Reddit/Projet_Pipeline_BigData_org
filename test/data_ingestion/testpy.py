@@ -1,37 +1,22 @@
-# Fichier: reddit_to_kafka_pipeline.py
-
+import os
 import praw
 import time
 import json
+import re
 from kafka.admin import KafkaAdminClient, NewTopic
 from kafka import KafkaProducer
 from kafka.errors import TopicAlreadyExistsError, NoBrokersAvailable
+from config import CLIENT_ID,CLIENT_SECRET,USER_AGENT,USERNAME,KAFKA_TOPIC,KAFKA_BROKER_URL,PARTITIONS,REPLICATION_FACTOR
 
 # =============================================================================
 # ---                      PARTIE 1: CONFIGURATION                          ---
 # =============================================================================
 
-# --- Paramètres Kafka ---
-KAFKA_BROKER_URL = 'localhost:9092'
-KAFKA_TOPIC = 'reddit-comments'
-PARTITIONS = 3
-REPLICATION_FACTOR = 1  # Doit être 1 car nous n'avons qu'un seul broker
+KAFKA_TOPIC = KAFKA_TOPIC
 
-# --- Paramètres Reddit (remplacez par vos propres identifiants) ---
-# Vous devez obtenir ces informations en créant une application sur Reddit
-CLIENT_ID = "VOTRE_CLIENT_ID"
-CLIENT_SECRET = "VOTRE_CLIENT_SECRET"
-USER_AGENT = "Pipeline de données v1.0 par u/VOTRE_NOM_UTILISATEUR"
 
-# --- Paramètres de recherche pour la Coupe du Monde Féminine 2025 ---
-SUBREDDITS_A_ECOUTER = "WomensSoccer+USWNT+NWSL+soccer+fussball"
-MOTS_CLES = [
-    "usa", "uswnt", "germany", "deutschland", "allemagne", "dfb frauen", 
-    "goal", "tor", "penalty", "finale", "world cup"
-]
 
-# =============================================================================
-# ---                   PARTIE 2: FONCTIONS UTILITAIRES                     ---
+
 # =============================================================================
 
 def create_kafka_topic():
@@ -89,59 +74,121 @@ def create_kafka_producer():
         print(f"Une erreur inattendue est survenue lors de la création du producteur : {e}")
         return None
 
-def stream_reddit_comments(producer):
-    """
-    Se connecte à Reddit, écoute les nouveaux commentaires en temps réel
-    et les envoie à Kafka via le producteur fourni.
-    """
-    print("\n--- Étape 3: Lancement du streaming Reddit ---")
-    try:
-        reddit = praw.Reddit(
-            client_id=CLIENT_ID,
-            client_secret=CLIENT_SECRET,
-            user_agent=USER_AGENT
-        )
-        print(f"✅ Connecté à Reddit en tant que {reddit.user.me()}")
-        print(f"📡 Écoute des nouveaux commentaires sur : r/{SUBREDDITS_A_ECOUTER.replace('+', ', r/')}")
 
-        for comment in reddit.subreddit(SUBREDDITS_A_ECOUTER).stream.comments(skip_existing=True):
-            # Vérifie si le commentaire contient un mot-clé pertinent
-            if any(keyword in comment.body.lower() for keyword in MOTS_CLES):
+# ---------- Connexion à Reddit ----------
+reddit = praw.Reddit(
+    client_id=CLIENT_ID,
+    client_secret=CLIENT_SECRET,
+    user_agent=USER_AGENT
+)
+
+# ---------- Subreddits et mots-clés ----------
+subreddits = "cryptocurrency+Bitcoin+Ethereum+altcoin+CryptoMarkets+ethtrader+CryptoTechnology+CryptoCurrencyNews+DeFi+CryptoMoonShots+Dogecoin+Cardano+Solana+ShibaInu"
+keywords = [
+    "crypto", "cryptocurrency", "bitcoin", "btc", "ethereum", "eth",
+    "blockchain", "altcoin", "token", "defi", "nft", "smart contract",
+    "mining", "miner", "hash rate", "wallet", "hardware wallet", "cold storage",
+    "staking", "yield farming", "airdrop", "ico", "ido", "web3",
+    "dogecoin", "doge", "cardano", "ada", "solana", "sol", "shiba inu", "shib"
+]
+keywords = [k.lower() for k in keywords]
+
+# ---------- Fichier de sortie ----------
+
+output_file = "reddit_crypto_data.json"
+if not os.path.exists(output_file):
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump([], f)
+
+# ---------- Fonctions utilitaires ----------
+def is_relevant(text):
+    """Vérifie si le commentaire contient un mot-clé pertinent"""
+    if not text:
+        return False
+    text = text.lower()
+    return any(re.search(r'\b{}\b'.format(re.escape(k)), text) for k in keywords)
+
+
+def save_comment(data):
+    """Sauvegarde un commentaire unique dans le fichier JSON"""
+    try:
+        # créer fichier vide si absent
+        if not os.path.exists(output_file):
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump([], f)
+
+        with open(output_file, "r+", encoding="utf-8") as f:
+            try:
+                comments = json.load(f)
+            except json.JSONDecodeError:
+                comments = []  # si le JSON est corrompu
+
+            # éviter les doublons via l'ID du commentaire
+            if not any(c["id"] == data["id"] for c in comments):
+                comments.append(data)
+
+            # réécriture propre du fichier
+            f.seek(0)
+            json.dump(comments, f, ensure_ascii=False, indent=2)
+            f.truncate()
+
+    except Exception as e:
+        print("Erreur sauvegarde:", e)
+
+
+# ---------- Récupérer anciens commentaires ----------
+def fetch_old_comments(limit=1000):
+    print("📥 Récupération des anciens commentaires...")
+    try:
+        subreddit = reddit.subreddit(subreddits)
+        for comment in subreddit.comments(limit=limit):
+            if is_relevant(comment.body):
                 data = {
                     "id": comment.id,
                     "author": str(comment.author),
                     "subreddit": str(comment.subreddit),
                     "text": comment.body,
-                    "timestamp_utc": comment.created_utc,
+                    "timestamp": comment.created_utc,
+                    "score": comment.score,
+                    "num_replies": len(comment.replies)
                 }
-                
-                print(f"💬 [Commentaire pertinent trouvé] -> Envoi à Kafka...")
-                # Envoi des données au topic Kafka
-                producer.send(KAFKA_TOPIC, value=data)
-                
-    except KeyboardInterrupt:
-        print("\n🛑 Arrêt du streaming demandé par l'utilisateur (Ctrl+C).")
+                print(f"[Ancien] {data['text']}")
+                save_comment(data)
+        print("✅ Récupération des anciens commentaires terminée.")
     except Exception as e:
-        print(f"⚠️ Une erreur critique est survenue dans le stream Reddit : {e}")
+        print("⚠️ Erreur récupération anciens commentaires:", e)
 
-# =============================================================================
-# ---                       PARTIE 3: POINT D'ENTRÉE                        ---
-# =============================================================================
 
+# ---------- Stream en temps réel ----------
+def stream_new_comments():
+    print("📡 Écoute des nouveaux commentaires en temps réel...")
+    try:
+        for comment in reddit.subreddit(subreddits).stream.comments(skip_existing=True):
+            try:
+                if is_relevant(comment.body):
+                    data = {
+                        "id": comment.id,
+                        "author": str(comment.author),
+                        "subreddit": str(comment.subreddit),
+                        "text": comment.body,
+                        "timestamp": comment.created_utc,
+                        "score": comment.score,
+                        "num_replies": len(comment.replies)
+                    }
+
+                    print(f"[Nouveau] {data['text']}")
+                    save_comment(data)
+            except Exception as e:
+                print("Erreur traitement commentaire:", e)
+                time.sleep(1)
+    except KeyboardInterrupt:
+        print("🛑 Arrêt du stream Reddit (Ctrl+C).")
+    except Exception as e:
+        print("⚠️ Erreur générale stream:", e)
+        time.sleep(5)
+
+
+# ---------- Main ----------
 if __name__ == "__main__":
-    # Étape 1: S'assurer que le topic existe. Si ça échoue, on arrête tout.
-    if create_kafka_topic():
-        
-        # Étape 2: Créer le producteur Kafka.
-        kafka_producer = create_kafka_producer()
-        
-        # Étape 3: Si le producteur est bien créé, on lance le stream.
-        if kafka_producer:
-            stream_reddit_comments(kafka_producer)
-            
-            # Nettoyage à la fin du script
-            print("Fermeture du producteur Kafka...")
-            kafka_producer.close()
-            print("Producteur fermé. Au revoir !")
-        else:
-            print("Le script ne peut pas continuer car le producteur Kafka n'a pas pu être créé.")
+    fetch_old_comments(limit=500)   # Récupère les 500 derniers commentaires pertinents
+    stream_new_comments()           # Puis écoute en temps réel
