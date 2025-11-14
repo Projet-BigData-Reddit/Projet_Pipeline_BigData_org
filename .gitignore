@@ -6,3 +6,6 @@
 .idea/shelf/
 .idea/vcs.xml
 .env
+test/data_ingestion/reddit_crypto_data.json
+.kafka_data
+.idea
