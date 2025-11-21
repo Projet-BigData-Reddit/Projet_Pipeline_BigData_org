@@ -1,0 +1,6 @@
+KAFKA_TOPIC = "Reddit_Data"
+KAFKA_BROKER_URL = 'localhost:9092'
+PARTITIONS = 1
+REPLICATION_FACTOR = 1
+
+
