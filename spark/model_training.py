@@ -90,3 +90,17 @@ model="AdityaAI9/distilbert_finance_sentiment_analysis"
 @pandas_udf(StringType())
 def get_sentiment_udf(s:pd.Series) -> pd.Series:
     return pd.Series([result['label'] for result in classifier(s.tolist())])
+
+word2vec = Word2Vec(
+    vectorSize=100,                 # embedding size
+    minCount=2,                     # ignore rare words
+    inputCol="filtered_tokens",
+    outputCol="word2vec_features",
+    windowSize=5,                   # context window
+    maxIter=20,                     # training iterations
+    stepSize=0.025,                 # learning rate
+    seed=42
+)
+w2v_model = word2vec.fit(df_train)
+
+model.save("/opt/spark/models")
