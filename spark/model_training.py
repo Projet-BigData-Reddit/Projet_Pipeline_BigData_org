@@ -114,7 +114,7 @@ word2vec = Word2Vec(
 )
 w2v_model = word2vec.fit(df_with_sentiment)
 
-w2v_model.save("/opt/spark/models")
+w2v_model.save("/opt/spark/models/word2vec")
 
 
 cv = CountVectorizer(
