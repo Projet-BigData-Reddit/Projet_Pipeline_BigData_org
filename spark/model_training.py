@@ -83,24 +83,20 @@ df = tokenized_df.withColumn("year", year("timestamp")) \
                   .withColumn("day_of_year", dayofyear("timestamp"))
                   
 
-
-classifier = pipeline(
-    "text-classification", 
-    model="AdityaAI9/distilbert_finance_sentiment_analysis"
-    )
+API_URL = "http://sentiment-container:8000/predict"  # docker network name
 
 @pandas_udf(StringType())
-def get_sentiment_udf(s:pd.Series) -> pd.Series:
-    return pd.Series([result['label'] for result in classifier(s.tolist())])
+def get_sentiment_udf(series: pd.Series) -> pd.Series:
+    texts = series.tolist()
+    response = requests.post(API_URL, json={"texts": texts})
+    labels = response.json()["labels"]
+    return pd.Series(labels)
 
-""""" hadshi khas yrunni f service bohdo
-df_with_sentiment = df.withColumn(
+df_with_sentiment = tokenized_df.withColumn(
     "sentiment",
-    get_sentiment_udf(col("text"))
+    get_sentiment_udf(col("text"))    
 )
 
-df_with_sentiment = df_with_sentiment.drop("text")
-"""
 word2vec = Word2Vec(
     vectorSize=100,                 # embedding size
     minCount=2,                     # ignore rare words

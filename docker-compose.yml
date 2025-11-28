@@ -61,6 +61,15 @@ services:
       - ./test/data_ingestion:/opt/spark/work-dir
     depends_on:
       - spark-master
+  
+  sentiment-api:
+    build:
+      context: ./distillbert_fin
+      dockerfile: Dockerfile
+    container_name: sentiment-container
+    image: sentiment-api:latest
+    ports:
+      - "8000:8000"
 
 volumes:
   kafka_data:
