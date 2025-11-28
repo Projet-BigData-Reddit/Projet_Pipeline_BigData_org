@@ -1,10 +1,12 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType,StructField,StringType,IntegerType,LongType,DoubleType
 from pyspark.sql.functions import unix_timestamp, to_date,col, regexp_replace,trim,lower
-from pyspark.ml.feature import Tokenizer, StopWordsRemover
+from pyspark.ml.feature import Tokenizer, StopWordsRemover, CountVectorizer, Word2Vec, StringIndexer
 from pyspark.sql.functions import year, month, dayofmonth, hour, minute, second, dayofweek, dayofyear
 from transformers import pipeline
 from pyspark.sql.functions import pandas_udf
+from pyspark.ml.clustering import LDA
+import pandas as pd
 
 
 
@@ -24,7 +26,7 @@ schema = StructType([
     StructField("num_replies",IntegerType())
 ])
 
-df = spark.read.schema(schema).option("multiLine", "true").json("C:\Users\medam\OneDrive\Bureau\Projet_Pipeline_BigData\test\data_ingestion\reddit_crypto_data.json")
+df = spark.read.schema(schema).option("multiLine", "true").json("/opt/spark/work-dir/reddit_crypto_data.json")
 df = df.withColumn("timestamp",col("timestamp").cast("timestamp"))
 
 df.printSchema()
@@ -82,25 +84,132 @@ df = tokenized_df.withColumn("year", year("timestamp")) \
                   
 
 
-classifier = pipeline(
-"text-classification", 
-model="AdityaAI9/distilbert_finance_sentiment_analysis"
-)
+
 
 @pandas_udf(StringType())
 def get_sentiment_udf(s:pd.Series) -> pd.Series:
+    classifier = pipeline(
+        "text-classification", 
+        model="AdityaAI9/distilbert_finance_sentiment_analysis"
+        )
     return pd.Series([result['label'] for result in classifier(s.tolist())])
+
+
+df_with_sentiment = df.withColumn(
+    "sentiment",
+    get_sentiment_udf(col("text"))
+)
+
+df_with_sentiment = df_with_sentiment.drop("text")
 
 word2vec = Word2Vec(
     vectorSize=100,                 # embedding size
     minCount=2,                     # ignore rare words
-    inputCol="filtered_tokens",
+    inputCol="filtered_words",
     outputCol="word2vec_features",
     windowSize=5,                   # context window
     maxIter=20,                     # training iterations
     stepSize=0.025,                 # learning rate
     seed=42
 )
-w2v_model = word2vec.fit(df_train)
+w2v_model = word2vec.fit(df_with_sentiment)
 
-model.save("/opt/spark/models")
+w2v_model.save("/opt/spark/models")
+
+
+cv = CountVectorizer(
+    inputCol="filtered_words",
+    outputCol="features_lda",
+    vocabSize=2000, 
+    minDF=3 
+)
+cv_model = cv.fit(df_with_sentiment)
+df_with_cv = cv_model.transform(df_with_sentiment)
+
+
+# If your LDA wants counts, you may need CountVectorizer; here we assume embeddings
+lda = LDA(
+    k=6, 
+    maxIter=20,
+    featuresCol="features_lda", 
+    seed=42,
+    topicDistributionCol="topic_distribution"
+)
+
+# You must train LDA on the DataFrame that contains the CountVectorizer's output
+lda_model = lda.fit(df_with_cv) 
+
+# Save model
+lda_model.save("/opt/spark/models/lda_model")
+cv_model.save("/opt/spark/models/count_vectorizer_model")
+
+# ---------------------------------------------------------
+# 5. StringIndexer for Categorical Features (Subreddit, Sentiment)
+# ---------------------------------------------------------
+
+
+# Indexer for Subreddit
+subreddit_indexer = StringIndexer(
+    inputCol="subreddit", 
+    outputCol="subreddit_index"
+)
+subreddit_model = subreddit_indexer.fit(df_with_sentiment)
+df_indexed = subreddit_model.transform(df_with_sentiment)
+subreddit_model.save("/opt/spark/models/subreddit_indexer_model")
+
+# Indexer for Sentiment
+sentiment_indexer = StringIndexer(
+    inputCol="sentiment", 
+    outputCol="sentiment_index"
+)
+sentiment_model = sentiment_indexer.fit(df_indexed)
+df_indexed = sentiment_model.transform(df_indexed)
+sentiment_model.save("/opt/spark/models/sentiment_indexer_model")
+
+# ---------------------------------------------------------
+# 6. VectorAssembler (Combine All Features)
+# ---------------------------------------------------------
+from pyspark.ml.feature import VectorAssembler
+
+# List all numerical/vector features to be combined
+feature_columns = [
+    "word2vec_features",
+    "topic_distribution",
+    "year", "month", "day", "hour",  
+    "day_of_week", "day_of_year",
+    "subreddit_index",
+    "sentiment_index"
+]
+
+# Note: LDA and Word2Vec models were fitted on the whole data, 
+# but the resulting features are transformed onto the DataFrame here.
+df_features = w2v_model.transform(df_indexed)
+df_features = lda_model.transform(df_features)
+
+assembler = VectorAssembler(
+    inputCols=feature_columns, 
+    outputCol="features_regression" # The single column expected by the regressor
+)
+
+df_final_features = assembler.transform(df_features)
+# VectorAssembler doesn't need to be saved as a model, but the assembler definition can be saved if part of a larger Pipeline.
+
+# ---------------------------------------------------------
+# 7. RandomForestRegressor Training
+# ---------------------------------------------------------
+from pyspark.ml.regression import RandomForestRegressor
+
+# Define the model, using the assembled vector as input
+rf = RandomForestRegressor(
+    featuresCol="features_regression", 
+    labelCol="score", 
+    numTrees=30,      # Number of trees (can be tuned for accuracy/speed trade-off)
+    maxDepth=10,      # Max depth of each tree (limits complexity)
+    seed=42
+)
+
+# Train the model on your entire dataset
+rf_model = rf.fit(df_final_features)
+
+# Save the trained regression model for real-time inference
+rf_model.save("/opt/spark/models/random_forest_model")
