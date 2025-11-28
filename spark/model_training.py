@@ -84,24 +84,23 @@ df = tokenized_df.withColumn("year", year("timestamp")) \
                   
 
 
-
+classifier = pipeline(
+    "text-classification", 
+    model="AdityaAI9/distilbert_finance_sentiment_analysis"
+    )
 
 @pandas_udf(StringType())
 def get_sentiment_udf(s:pd.Series) -> pd.Series:
-    classifier = pipeline(
-        "text-classification", 
-        model="AdityaAI9/distilbert_finance_sentiment_analysis"
-        )
     return pd.Series([result['label'] for result in classifier(s.tolist())])
 
-
+""""" hadshi khas yrunni f service bohdo
 df_with_sentiment = df.withColumn(
     "sentiment",
     get_sentiment_udf(col("text"))
 )
 
 df_with_sentiment = df_with_sentiment.drop("text")
-
+"""
 word2vec = Word2Vec(
     vectorSize=100,                 # embedding size
     minCount=2,                     # ignore rare words

@@ -14,7 +14,7 @@ RUN curl -L -o /opt/spark/jars/spark-sql-kafka-0-10_2.12-3.5.1.jar https://repo1
  && curl -L -o /opt/spark/jars/commons-pool2-2.11.1.jar https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar
 
 # Install Python packages without cache
-RUN pip install --no-cache-dir pandas transformers torch
+RUN pip install --no-cache-dir pandas 
 
 WORKDIR /opt/spark/work-dir
 
