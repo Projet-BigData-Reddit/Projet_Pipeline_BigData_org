@@ -64,7 +64,7 @@ services:
   
   sentiment-api:
     build:
-      context: ./distillbert_fin
+      context: ./distilbert_fin
       dockerfile: Dockerfile
     container_name: sentiment-container
     image: sentiment-api:latest
