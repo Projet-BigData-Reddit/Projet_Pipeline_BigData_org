@@ -9,7 +9,7 @@ USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
 
 KAFKA_TOPIC = "Reddit_Data"
-KAFKA_BROKER_URL = 'localhost:9092'
+KAFKA_BROKER_URL = 'localhost:9093'
 PARTITIONS = 1
 REPLICATION_FACTOR = 1
 

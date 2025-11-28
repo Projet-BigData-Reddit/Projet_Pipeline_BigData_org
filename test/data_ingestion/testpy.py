@@ -1,5 +1,7 @@
 import os
 # Fichier: reddit_to_kafka_pipeline.py
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 import praw
 import time
 import json
@@ -96,7 +98,7 @@ keywords = [k.lower() for k in keywords]
 
 # ---------- Fichier de sortie ----------
 
-output_file = "reddit_crypto_data.json"
+output_file = "test/data_ingestion/reddit_crypto_data.json"
 if not os.path.exists(output_file):
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump([], f)
@@ -191,6 +193,6 @@ def stream_new_comments():
 
 # ---------- Main ----------
 if __name__ == "__main__":
-    fetch_old_comments(limit=500)   # Récupère les 500 derniers commentaires pertinents
+    fetch_old_comments(limit=2000)   # Récupère les 500 derniers commentaires pertinents
     stream_new_comments()           # Puis écoute en temps réel
 
