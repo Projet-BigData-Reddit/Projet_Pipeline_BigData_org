@@ -6,7 +6,7 @@ import uvicorn
 # Load model once
 classifier = pipeline(
     "text-classification",
-    model="AdityaAI9/distilbert_finance_sentiment_analysis"
+    model="mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis"
 )
 
 app = FastAPI()
