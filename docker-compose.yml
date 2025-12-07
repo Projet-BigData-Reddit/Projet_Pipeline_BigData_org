@@ -40,7 +40,7 @@ services:
     volumes:
       - ./spark:/opt/spark/work-dir
       - ./models:/opt/spark/models
-      - ./spark:/opt/spark/work-dir
+      - ./test/data_ingestion:/opt/spark/work-dir
     depends_on:
       - broker
 
@@ -58,7 +58,7 @@ services:
     volumes:
       - ./spark:/opt/spark/work-dir
       - ./models:/opt/spark/models
-      - ./spark:/opt/spark/work-dir
+      - ./test/data_ingestion:/opt/spark/work-dir
     depends_on:
       - spark-master
   
