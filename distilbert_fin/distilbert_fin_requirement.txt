@@ -1,7 +1,4 @@
+numpy<2.0.0
 fastapi==0.123.9
 uvicorn==0.38.0
 transformers==4.33.2
-torch==2.2.0
-
-
-

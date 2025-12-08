@@ -1,19 +1,20 @@
 from pyspark.sql import SparkSession
+import requests
 from pyspark.sql.types import StructType,StructField,StringType,IntegerType,LongType,DoubleType
 from pyspark.sql.functions import unix_timestamp, to_date,col, regexp_replace,trim,lower
 from pyspark.ml.feature import Tokenizer, StopWordsRemover, CountVectorizer, Word2Vec, StringIndexer
 from pyspark.sql.functions import year, month, dayofmonth, hour, minute, second, dayofweek, dayofyear
-from transformers import pipeline
 from pyspark.sql.functions import pandas_udf
 from pyspark.ml.clustering import LDA
 import pandas as pd
+import os
 
 
 
 spark = SparkSession \
     .builder \
     .appName("Local Model training") \
-    .master("spark://localhost:7077") \
+    .master("spark://spark-master:7077") \
     .getOrCreate()
 
 schema = StructType([
@@ -83,20 +84,53 @@ df = tokenized_df.withColumn("year", year("timestamp")) \
                   .withColumn("day_of_year", dayofyear("timestamp"))
                   
 
-API_URL = "http://sentiment-container:8000/predict"  # docker network name
+import math
+
+API_URL = "http://sentiment-container:8000/predict"
+BATCH_SIZE = 50  # We send 50 sentences at a time to the API
 
 @pandas_udf(StringType())
 def get_sentiment_udf(series: pd.Series) -> pd.Series:
     texts = series.tolist()
-    response = requests.post(API_URL, json={"texts": texts})
-    labels = response.json()["labels"]
-    return pd.Series(labels)
+    results = []
+    
+    # Check if empty
+    if not texts:
+        return pd.Series([], dtype="string")
+    
+    # --- Internal Batching Loop ---
+    # Instead of sending all 1300 rows at once, we send 50 at a time
+    for i in range(0, len(texts), BATCH_SIZE):
+        batch = texts[i : i + BATCH_SIZE]
+        
+        try:
+            # Send the mini-batch to the API
+            response = requests.post(API_URL, json={"texts": batch}, timeout=300)
+            
+            if response.status_code == 200:
+                # Add the received labels to our results list
+                batch_labels = response.json()["labels"]
+                results.extend(batch_labels)
+            else:
+                # API Error: Fill this batch with 'neutral'
+                print(f"Batch {i} Error: {response.status_code}")
+                results.extend(["neutral"] * len(batch))
+                
+        except Exception as e:
+            # Connection Error: Fill this batch with 'neutral'
+            print(f"Batch {i} Exception: {str(e)}")
+            results.extend(["neutral"] * len(batch))
+            
+    # Return the full list combined
+    return pd.Series(results)
 
-df_with_sentiment = tokenized_df.withColumn(
+df_with_sentiment = df.withColumn(
     "sentiment",
     get_sentiment_udf(col("text"))    
 )
 
+
+    
 word2vec = Word2Vec(
     vectorSize=100,                 # embedding size
     minCount=2,                     # ignore rare words
@@ -109,7 +143,7 @@ word2vec = Word2Vec(
 )
 w2v_model = word2vec.fit(df_with_sentiment)
 
-w2v_model.save("/opt/spark/models/word2vec")
+w2v_model.write().overwrite().save("/opt/spark/models/word2vec")
 
 
 cv = CountVectorizer(
@@ -135,8 +169,8 @@ lda = LDA(
 lda_model = lda.fit(df_with_cv) 
 
 # Save model
-lda_model.save("/opt/spark/models/lda_model")
-cv_model.save("/opt/spark/models/count_vectorizer_model")
+lda_model.write().overwrite().save("/opt/spark/models/lda_model")
+cv_model.write().overwrite().save("/opt/spark/models/count_vectorizer_model")
 
 # ---------------------------------------------------------
 # 5. StringIndexer for Categorical Features (Subreddit, Sentiment)
@@ -150,7 +184,7 @@ subreddit_indexer = StringIndexer(
 )
 subreddit_model = subreddit_indexer.fit(df_with_sentiment)
 df_indexed = subreddit_model.transform(df_with_sentiment)
-subreddit_model.save("/opt/spark/models/subreddit_indexer_model")
+subreddit_model.write().overwrite().save("/opt/spark/models/subreddit_indexer_model")
 
 # Indexer for Sentiment
 sentiment_indexer = StringIndexer(
@@ -159,7 +193,7 @@ sentiment_indexer = StringIndexer(
 )
 sentiment_model = sentiment_indexer.fit(df_indexed)
 df_indexed = sentiment_model.transform(df_indexed)
-sentiment_model.save("/opt/spark/models/sentiment_indexer_model")
+sentiment_model.write().overwrite().save("/opt/spark/models/sentiment_indexer_model")
 
 # ---------------------------------------------------------
 # 6. VectorAssembler (Combine All Features)
@@ -179,6 +213,7 @@ feature_columns = [
 # Note: LDA and Word2Vec models were fitted on the whole data, 
 # but the resulting features are transformed onto the DataFrame here.
 df_features = w2v_model.transform(df_indexed)
+df_features = cv_model.transform(df_features)
 df_features = lda_model.transform(df_features)
 
 assembler = VectorAssembler(
@@ -207,4 +242,4 @@ rf = RandomForestRegressor(
 rf_model = rf.fit(df_final_features)
 
 # Save the trained regression model for real-time inference
-rf_model.save("/opt/spark/models/random_forest_model")
+rf_model.write().overwrite().save("/opt/spark/models/random_forest_model")
