@@ -6,7 +6,6 @@
 .idea/shelf/
 .idea/vcs.xml
 .env
-spark/*.json
 .kafka_data
 .idea
 models/
