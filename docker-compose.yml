@@ -5,12 +5,14 @@ services:
     image: apache/kafka:latest
     container_name: broker
     ports:
-      - "9092:9092"  # Accès interne
+      - "9092:9092"  # Mappe le ports 9092 du conteneur au port 9092 de la machine hôte
       - "9093:9093"  # Accès EXTERNE pour votre script Python local
     environment:
       KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093,CONTROLLER://0.0.0.0:9094
+      KAFKA_PROCESS_ROLES: broker,controller # joue le role de broker et listener au meme temps
+      # KAFKA_LISTENERS définit les ports que Kafka ouvre réellement.
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093,CONTROLLER://0.0.0.0:9094 # Internal : services dans le même Docker network, External : Clients hors Docker comme ton PC, CONTROLLER : communication entre les noeuds qui joue role de Controller
+      # Définit comment les clients (consumers,producers)
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://broker:9092,EXTERNAL://localhost:9093
       
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
@@ -33,7 +35,7 @@ services:
     container_name: spark-master
     environment:
       SPARK_MODE: master
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"] # commande executer a chaque fois que le conteneur démarre
     ports:
       - "8080:8080"
       - "7077:7077"
