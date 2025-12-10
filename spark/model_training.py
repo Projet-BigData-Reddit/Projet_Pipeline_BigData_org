@@ -17,6 +17,7 @@ spark = SparkSession \
     .master("spark://spark-master:7077") \
     .getOrCreate()
 
+# Définition du shéma
 schema = StructType([
     StructField("id",StringType()),
     StructField("author",StringType()),
@@ -34,7 +35,11 @@ df.printSchema()
 
 # drop nulls
 df_clean = df.dropna(subset=["text"])
+
 # remove URLs (http and www)
+# \S -> veut dire caractère qui n'est pas espace 
+# \S+ -> Suite de caractère qui n'est pas espace
+# \. un point
 df_clean = df_clean.withColumn("text",regexp_replace(col("text"),r"https?://\S+", "")) \
   .withColumn("text",regexp_replace(col("text"),r"www\.\S+",""))
 
@@ -44,6 +49,7 @@ df_clean = df_clean.withColumn("text",lower(col("text")))
 
 # Remove special characters (keep letters, numbers, spaces)
 # regexep_replace(source string column, regular expre pattern to match, string to replace with)
+# ^ au début → tout sauf ce qui est dans l’ensemble. \s → tout espace (espace, tab, retour à la ligne).
 df_clean = df_clean.withColumn("text",regexp_replace(col("text"),r"[^A-Za-z0-9\s]",""))
 
 # trim leading/trailing spaces
@@ -109,7 +115,8 @@ def get_sentiment_udf(series: pd.Series) -> pd.Series:
             
             if response.status_code == 200:
                 # Add the received labels to our results list
-                batch_labels = response.json()["labels"]
+                # response.json() lit la chaîne de caractères JSON brute contenue dans le corps de la réponse et la transforme en la structure de données Python équivalente (dict, list..).
+                batch_labels = response.json()["labels"] 
                 results.extend(batch_labels)
             else:
                 # API Error: Fill this batch with 'neutral'
@@ -156,10 +163,10 @@ cv_model = cv.fit(df_with_sentiment)
 df_with_cv = cv_model.transform(df_with_sentiment)
 
 
-# If your LDA wants counts, you may need CountVectorizer; here we assume embeddings
+
 lda = LDA(
-    k=6, 
-    maxIter=20,
+    k=6, # le nombre de sujets (thèmes) que l'on veut extraire
+    maxIter=20, 
     featuresCol="features_lda", 
     seed=42,
     topicDistributionCol="topic_distribution"
