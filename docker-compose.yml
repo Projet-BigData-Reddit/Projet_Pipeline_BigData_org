@@ -27,6 +27,38 @@ services:
     volumes:
       - kafka_data:/var/lib/kafka/data
 
+  cassandra:
+      image: cassandra:latest
+      container_name: cassandra
+      ports:
+        - "9042:9042"
+      environment:
+        - CASSANDRA_CLUSTER_NAME=RedditCluster
+        - CASSANDRA_DC=datacenter1
+        - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      volumes:
+        - cassandra_data:/var/lib/cassandra
+      healthcheck:
+        test: ["CMD-SHELL", "[ $$(nodetool statusgossip) = running ]"]
+        interval: 30s
+        timeout: 10s
+        retries: 5
+
+  # ---  SERVICE D'INITIALISATION ---
+  cassandra-init:
+    image: cassandra:latest
+    container_name: cassandra-init
+    depends_on:
+      - cassandra
+    volumes:
+      - ./init.cql:/init.cql  # On monte le fichier SQL dans le conteneur
+    command: >
+      bash -c "echo '⏳ Attente de Cassandra...' &&
+      while ! cqlsh cassandra 9042 -e 'DESCRIBE KEYSPACES' > /dev/null 2>&1; do sleep 5; done &&
+      echo '✅ Cassandra est prêt ! Création des tables...' &&
+      cqlsh cassandra 9042 -f /init.cql &&
+      echo '🎉 Tables créées avec succès !'"
+
   spark-master:
     build:
       context: .
@@ -44,6 +76,7 @@ services:
       - ./models:/opt/spark/models
     depends_on:
       - broker
+      - cassandra
 
   spark-worker:
     build:
@@ -61,6 +94,7 @@ services:
       - ./models:/opt/spark/models
     depends_on:
       - spark-master
+      - cassandra
   
   sentiment-api:
     build:
@@ -73,3 +107,4 @@ services:
 
 volumes:
   kafka_data:
+  cassandra_data:

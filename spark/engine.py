@@ -1,7 +1,5 @@
-# engine.py
-
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, from_json, round, when, udf
+from pyspark.sql.functions import col, from_json, round, when, udf, to_timestamp
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
 from pyspark.ml.feature import VectorAssembler
 
@@ -18,6 +16,8 @@ class RedditInferenceEngine:
             .master(config.MASTER) \
             .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1") \
             .config("spark.sql.streaming.forceDeleteTempCheckpointLocation", "true") \
+            .config("spark.cassandra.connection.host", config.CASSANDRA) \
+            .config("spark.cassandra.connection.port", config.CASSANDRA_PORT) \
             .getOrCreate()
         
         self.spark.sparkContext.setLogLevel("WARN")
@@ -134,33 +134,91 @@ class RedditInferenceEngine:
         except Exception as e:
             print(f"⚠️ Erreur Batch {batch_id}: {e}")
 
+    def process_and_save(self, batch_df, batch_id):
+            """Fonction exécutée sur chaque micro-batch."""
+            if batch_df.isEmpty(): return
+
+            print(f"⚙️ Traitement Batch {batch_id}...")
+            
+            try:
+                # A. Prédictions
+                final_df = self._transform_batch(batch_df)
+                predictions = self.models['rf'].transform(final_df)
+                
+                # B. Enrichissement (Sujet + Viralité)
+                topic_map = self.topic_labels
+                # UDF pour récupérer le nom du sujet
+                def get_topic_name(v):
+                    return topic_map.get(int(v.argmax()), "Autre")
+                topic_udf = udf(get_topic_name, StringType())
+                
+                enrichi_df = predictions.withColumn("sujet_mots", topic_udf(col("topic_distribution"))) \
+                                        .withColumn("score_predit", round(col("prediction"), 2)) \
+                                        .withColumn("viralite", 
+                                                when(col("prediction") > 3.0, "HOT")
+                                                .when(col("prediction") > 1.5, "UP")
+                                                .otherwise("LOW"))
+
+                # C. MAPPING POUR CASSANDRA
+                # On sélectionne et convertit les types pour la table 'viral_posts'
+                cassandra_df = enrichi_df.select(
+                    col("id"),
+                    col("author"),
+                    col("subreddit"),
+                    col("text").alias("text_content"),      # Renommé
+                    col("sentiment"),
+                    col("sujet_mots").alias("sujet"),       # Renommé
+                    col("score_predit").cast("float"),      # Cassandra aime les Float
+                    col("viralite"),
+                    to_timestamp(col("timestamp")).alias("creation_date") # Timestamp UNIX -> Date
+                )
+
+                print(f"💾 Sauvegarde de {cassandra_df.count()} messages dans Cassandra...")
+
+                # D. ÉCRITURE RÉELLE
+                cassandra_df.write \
+                    .format("org.apache.spark.sql.cassandra") \
+                    .options(table="viral_posts", keyspace="reddit_db") \
+                    .mode("append") \
+                    .save()
+                
+                print("✅ Sauvegarde réussie !")
+                
+            except Exception as e:
+                print(f"⚠️ Erreur Batch {batch_id}: {e}")
+
     def run(self):
-        print(f"🎧 Écoute de {config.KAFKA_TOPIC}...")
-        
-        schema = StructType([
-            StructField("id", StringType()),
-            StructField("author", StringType()),
-            StructField("subreddit", StringType()),
-            StructField("text", StringType()),
-            StructField("timestamp", DoubleType()),
-            StructField("score", IntegerType())
-        ])
+            print(f"🎧 Écoute de {config.KAFKA_TOPIC} avec Checkpointing...")
+            
+            schema = StructType([
+                StructField("id", StringType()),
+                StructField("author", StringType()),
+                StructField("subreddit", StringType()),
+                StructField("text", StringType()),
+                StructField("timestamp", DoubleType()),
+                StructField("score", IntegerType())
+            ])
 
-        raw_stream = self.spark.readStream \
-            .format("kafka") \
-            .option("kafka.bootstrap.servers", config.KAFKA_BROKER_URL) \
-            .option("subscribe", config.KAFKA_TOPIC) \
-            .option("startingOffsets", "latest") \
-            .option("failOnDataLoss", "false") \
-            .load()
+            # Lecture Kafka (EARLIEST pour ne rien rater au premier lancement)
+            raw_stream = self.spark.readStream \
+                .format("kafka") \
+                .option("kafka.bootstrap.servers", config.KAFKA_BROKER_URL) \
+                .option("subscribe", config.KAFKA_TOPIC) \
+                .option("startingOffsets", "earliest") \
+                .option("maxOffsetsPerTrigger", 50) \
+                .load()
 
-        json_stream = raw_stream.selectExpr("CAST(value AS STRING)") \
-            .select(from_json(col("value"), schema).alias("data")) \
-            .select("data.*")
+            json_stream = raw_stream.selectExpr("CAST(value AS STRING)") \
+                .select(from_json(col("value"), schema).alias("data")) \
+                .select("data.*")
 
-        query = json_stream.writeStream \
-            .foreachBatch(self.process_and_predict) \
-            .trigger(processingTime="5 seconds") \
-            .start()
+            # Chemin persistant pour le marque-page
+            checkpoint_dir = "/opt/spark/work-dir/checkpoints"
 
-        query.awaitTermination()
+            query = json_stream.writeStream \
+                .foreachBatch(self.process_and_save) \
+                .trigger(processingTime="20 seconds") \
+                .option("checkpointLocation", checkpoint_dir) \
+                .start()
+
+            query.awaitTermination()

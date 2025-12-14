@@ -1,16 +1,9 @@
-cd ~/Projet_Pipeline_BigData/spark
-zip job_files.zip config.py engine.py loader.py preprocessor.py
-
-/opt/spark/bin/spark-submit \
-  --master spark://spark-master:7077 \
-  --py-files job_files.zip \
-  --files config.py \
-  --conf spark.dynamicAllocation.enabled=false \
-  /opt/spark/work-dir/run.py
-
+""""Best command """""""
 
 /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
   --files config.py \
   --conf spark.dynamicAllocation.enabled=false \
   /opt/spark/work-dir/run.py
+
+docker exec -it cassandra cqlsh -e "SELECT * FROM reddit_db.viral_posts;"
