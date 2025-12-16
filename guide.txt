@@ -6,4 +6,9 @@
   --conf spark.dynamicAllocation.enabled=false \
   /opt/spark/work-dir/run.py
 
+#cassandra sur docker
 docker exec -it cassandra cqlsh -e "SELECT * FROM reddit_db.viral_posts;"
+
+#mongodb Local 
+mongosh "mongodb://monAdmin:motDePasseUltraSecret@127.0.0.1:27017/reddit_backup?authSource=admin"
+db.viral_posts_fallback.find().sort({_id: -1}).limit(5)

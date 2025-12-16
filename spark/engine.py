@@ -2,6 +2,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, from_json, round, when, udf, to_timestamp
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
 from pyspark.ml.feature import VectorAssembler
+import pymongo
 
 # Imports locaux
 import config
@@ -133,21 +134,41 @@ class RedditInferenceEngine:
             
         except Exception as e:
             print(f"⚠️ Erreur Batch {batch_id}: {e}")
+    def save_to_mongo(self, df_spark):
+            """Fonction de secours : Sauvegarde dans MongoDB si Cassandra échoue"""
+            try:
+                # Conversion Spark -> Pandas -> Dictionnaire (Nécessaire pour PyMongo)
+                records = df_spark.toPandas().to_dict(orient='records')
+                
+                if not records:
+                    return
+
+                # Création de l'URI de connexion avec authentification
+                uri = f"mongodb://{config.MONGO_USER}:{config.MONGO_PASS}@{config.MONGO_HOST}:{config.MONGO_PORT}/?authSource=admin"
+                
+                # Connexion et insertion
+                client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=2000)
+                db = client[config.MONGO_DB]
+                collection = db[config.MONGO_COLLECTION]
+                
+                collection.insert_many(records)
+                print(f"✅ SAUVEGARDE MONGODB RÉUSSIE : {len(records)} posts sauvés (Fallback).")
+                client.close()
+                
+            except Exception as e:
+                print(f"❌ ÉCHEC CRITIQUE : Impossible de sauver dans MongoDB non plus. Erreur : {e}")
 
     def process_and_save(self, batch_df, batch_id):
-            """Fonction exécutée sur chaque micro-batch."""
             if batch_df.isEmpty(): return
 
             print(f"⚙️ Traitement Batch {batch_id}...")
             
             try:
-                # A. Prédictions
+                # A. Prédictions & Enrichissement
                 final_df = self._transform_batch(batch_df)
                 predictions = self.models['rf'].transform(final_df)
                 
-                # B. Enrichissement (Sujet + Viralité)
                 topic_map = self.topic_labels
-                # UDF pour récupérer le nom du sujet
                 def get_topic_name(v):
                     return topic_map.get(int(v.argmax()), "Autre")
                 topic_udf = udf(get_topic_name, StringType())
@@ -159,33 +180,35 @@ class RedditInferenceEngine:
                                                 .when(col("prediction") > 1.5, "UP")
                                                 .otherwise("LOW"))
 
-                # C. MAPPING POUR CASSANDRA
-                # On sélectionne et convertit les types pour la table 'viral_posts'
-                cassandra_df = enrichi_df.select(
-                    col("id"),
-                    col("author"),
-                    col("subreddit"),
-                    col("text").alias("text_content"),      # Renommé
+                # Préparation du DataFrame final pour le stockage
+                storage_df = enrichi_df.select(
+                    col("id"), col("author"), col("subreddit"),
+                    col("text").alias("text_content"),
                     col("sentiment"),
-                    col("sujet_mots").alias("sujet"),       # Renommé
-                    col("score_predit").cast("float"),      # Cassandra aime les Float
+                    col("sujet_mots").alias("sujet"),
+                    col("score_predit").cast("float"),
                     col("viralite"),
-                    to_timestamp(col("timestamp")).alias("creation_date") # Timestamp UNIX -> Date
+                    to_timestamp(col("timestamp")).alias("creation_date")
                 )
 
-                print(f"💾 Sauvegarde de {cassandra_df.count()} messages dans Cassandra...")
+                # --- LE BLOC DE SÉCURITÉ (TRY CASSANDRA -> EXCEPT MONGO) ---
+                try:
+                    print(f"💾 Tentative sauvegarde Cassandra ({storage_df.count()} items)...")
+                    storage_df.write \
+                        .format("org.apache.spark.sql.cassandra") \
+                        .options(table="viral_posts", keyspace="reddit_db") \
+                        .mode("append") \
+                        .save()
+                    print("✅ Sauvegarde Cassandra réussie !")
+                
+                except Exception as e_cassandra:
+                    print(f"⚠️ ERREUR CASSANDRA : {e_cassandra}")
+                    print("🔄 Basculement vers MongoDB (Fallback)...")
+                    self.save_to_mongo(storage_df)
+                # -----------------------------------------------------------
 
-                # D. ÉCRITURE RÉELLE
-                cassandra_df.write \
-                    .format("org.apache.spark.sql.cassandra") \
-                    .options(table="viral_posts", keyspace="reddit_db") \
-                    .mode("append") \
-                    .save()
-                
-                print("✅ Sauvegarde réussie !")
-                
             except Exception as e:
-                print(f"⚠️ Erreur Batch {batch_id}: {e}")
+                print(f"⚠️ Erreur Générale Batch {batch_id}: {e}")
 
     def run(self):
             print(f"🎧 Écoute de {config.KAFKA_TOPIC} avec Checkpointing...")
@@ -206,6 +229,7 @@ class RedditInferenceEngine:
                 .option("subscribe", config.KAFKA_TOPIC) \
                 .option("startingOffsets", "earliest") \
                 .option("maxOffsetsPerTrigger", 50) \
+                .option("failOnDataLoss", "false") \
                 .load()
 
             json_stream = raw_stream.selectExpr("CAST(value AS STRING)") \

@@ -18,7 +18,7 @@ RUN curl -L -o /opt/spark/jars/spark-sql-kafka-0-10_2.12-3.5.1.jar https://repo1
 RUN curl -L -o /opt/spark/jars/spark-cassandra-connector-assembly_2.12-3.5.0.jar https://repo1.maven.org/maven2/com/datastax/spark/spark-cassandra-connector-assembly_2.12/3.5.0/spark-cassandra-connector-assembly_2.12-3.5.0.jar
 
 # Install Python packages without cache
-RUN pip install --no-cache-dir pandas 
+RUN pip install --no-cache-dir pandas pymongo
 
 WORKDIR /opt/spark/work-dir
 
