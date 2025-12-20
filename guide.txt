@@ -36,5 +36,8 @@ docker compose up -d
 
 URL : http://localhost:8091
 
+###############################
 sudo chmod 666 /var/run/docker.sock
 mkdir -p ./spark/checkpoints
+chmod -R 777 ./spark/checkpoints
+###############################
