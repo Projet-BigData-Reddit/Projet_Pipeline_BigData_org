@@ -22,7 +22,10 @@ RUN pip install --no-cache-dir pandas pymongo
 
 WORKDIR /opt/spark/work-dir
 
+# RUN mkdir -p /opt/spark/work-dir/checkpoints && \
+#     chmod -R 777 /opt/spark/work-dir
 RUN mkdir -p /opt/spark/work-dir/checkpoints && \
-    chmod -R 777 /opt/spark/work-dir
+    chown -R spark:spark /opt/spark/work-dir && \
+    chmod -R 775 /opt/spark/work-dir
 
 USER spark
