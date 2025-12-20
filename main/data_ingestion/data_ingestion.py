@@ -149,30 +149,39 @@ class DataIngestion:
             time.sleep(5)
             
     def save_to_datalake(self):
-            """Envoie le buffer vers Azure Data Lake Gen2"""
-            if not self.buffer: # Correction du nom : azure_buffer -> buffer
-                return
+        """Append the buffer to a single file in Azure Data Lake Gen2"""
+        if not self.buffer:
+            return
 
-            try:
-                # Utilisation du client déjà initialisé dans le __init__
-                file_system_client = self.azure_service_client.get_file_system_client(file_system=self.container_name)
-                
-                # Création d'un nom de fichier unique par timestamp
-                filename = f"raw_reddit_{int(time.time())}.json"
-                # Assurez-vous que le répertoire "bronze" existe ou Spark ne le verra pas
-                file_client = file_system_client.get_file_client(f"bronze/{filename}")
+        try:
+            # Use the client from __init__
+            file_system_client = self.azure_service_client.get_file_system_client(file_system=self.container_name)
+            
+            # Single target file
+            filename = "raw_reddit.json"
+            file_client = file_system_client.get_file_client(f"bronze/{filename}")
+            
+            # Convert buffer to JSON lines (one dict per line)
+            # This way we can append without breaking JSON
+            data_to_upload = "\n".join(json.dumps(item) for item in self.buffer) + "\n"
+            data_bytes = data_to_upload.encode('utf-8')
+            
+            # If file does not exist, create it
+            if not file_client.exists():
+                file_client.create_file()
+            
+            # Append at the end
+            file_client.append_data(data_bytes, offset=file_client.get_file_properties().size, length=len(data_bytes)) # Offset tells Azure where to start writing → at the end of the file
+            # flush_data(length) → Commit the data you just appended
+            file_client.flush_data(file_client.get_file_properties().size + len(data_bytes))
+            
+            print(f"📦 Appended {len(self.buffer)} messages to {filename} on Azure.")
+            
+            # Clear the buffer
+            self.buffer = []
+        except Exception as e:
+            print(f"❌ Error saving to Azure: {e}")
 
-                # Conversion du buffer en JSON
-                data_to_upload = json.dumps(self.buffer, indent=4) # Correction du nom
-                
-                # Upload
-                file_client.upload_data(data_to_upload, overwrite=True)
-                print(f"📦 Batch de {len(self.buffer)} messages sauvegardé sur Azure.")
-                
-                # Vider le sac après succès
-                self.buffer = [] 
-            except Exception as e:
-                print(f"❌ Erreur de sauvegarde Azure : {e}")
 
 
 if __name__ == "__main__":
