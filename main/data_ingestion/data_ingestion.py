@@ -5,11 +5,12 @@ import praw
 import time
 import json
 import re
+from typing import List  
 from kafka.admin import KafkaAdminClient, NewTopic
 from kafka import KafkaProducer
 from kafka.errors import  NoBrokersAvailable
 from config import CLIENT_ID,CLIENT_SECRET, KEYWORDS, SUBREDDITS,USER_AGENT,USERNAME,KAFKA_TOPIC,KAFKA_BROKER_URL,PARTITIONS,REPLICATION_FACTOR
-from utils.utils import contains_keywords
+from utils import contains_keywords
 
 class DataIngestion:
     """
@@ -110,7 +111,7 @@ class DataIngestion:
         return contains_keywords(text,keywords)
 
 
-    def stream_reddit_comments(self, subreddits: str, keywords: list[str]):
+    def stream_reddit_comments(self, subreddits: str, keywords: List[str]):
         """Stream en temps réel des commentaires Reddit vers Kafka."""
         print(f"📡 Démarrage du streaming Reddit → Kafka sur '{self.kafka_topic}'...")
         try:

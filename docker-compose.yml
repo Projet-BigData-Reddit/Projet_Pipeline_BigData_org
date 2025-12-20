@@ -25,6 +25,7 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_NUM_PARTITIONS: 3
     volumes:
+      - ./main:/opt/main  # j'ai ajouté cela pour partie de dag afin d'avoir file data_ingestion local sur container
       - kafka_data:/var/lib/kafka/data
 
   cassandra:
@@ -105,6 +106,63 @@ services:
     ports:
       - "8000:8000"
 
+
+  airflow-postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - airflow-db:/var/lib/postgresql/data
+
+  airflow-webserver:
+    image: apache/airflow:2.7.1
+    depends_on:
+      - airflow-postgres
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__WEBSERVER__RBAC: 'true'
+      AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests"
+    ports:
+      - "8091:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # à ajouter pour donner à Airflow le droit d’exécuter des commandes Docker sur ton host.
+      - ./main:/opt/airflow/main 
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    command: webserver
+    restart: always
+
+  airflow-scheduler:
+    image: apache/airflow:2.7.1
+    depends_on:
+      - airflow-webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./main:/opt/airflow/main  
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    command: scheduler
+    restart: always
+
+networks:
+  default:
+    name: reddit-network
+    driver: bridge
+
 volumes:
   kafka_data:
   cassandra_data:
+  airflow-db:

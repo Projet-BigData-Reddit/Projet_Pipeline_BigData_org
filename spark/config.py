@@ -32,9 +32,10 @@ CASSANDRA = "cassandra"
 CASSANDRA_PORT = "9042"
 
 
-MONGO_HOST = "host.docker.internal" 
+MONGO_HOST = "host.docker.internal"  
 MONGO_PORT = 27017
-MONGO_USER = "monAdmin"
-MONGO_PASS = "motDePasseUltraSecret"
-MONGO_DB = "reddit_backup"
-MONGO_COLLECTION = "viral_posts_fallback"
+MONGO_USER = None
+MONGO_PASS = None
+MONGO_DB = "reddit_backup_local"
+MONGO_COLLECTION = "viral_posts"
+

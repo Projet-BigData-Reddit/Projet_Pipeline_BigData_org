@@ -1,6 +1,7 @@
 import os
 import re
 import json
+from typing import List 
 
 def clean_text(text: str) -> str:
     """
@@ -18,7 +19,7 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-def contains_keywords(text: str, keywords: list[str]) -> bool:
+def contains_keywords(text: str, keywords: List[str]) -> bool:
     """
     Vérifie si un texte contient au moins un des mots-clés.
     - Ignore la casse
@@ -33,7 +34,7 @@ def contains_keywords(text: str, keywords: list[str]) -> bool:
         for k in keywords
     )
 
-def extract_mentions(text: str) -> list[str]:
+def extract_mentions(text: str) -> List[str]:
     """
     Extrait toutes les mentions d’utilisateurs (@nom) dans un texte.
     """
@@ -42,7 +43,7 @@ def extract_mentions(text: str) -> list[str]:
     return re.findall(r'@([A-Za-z0-9_]+)', text)
 
 
-def extract_hashtags(text: str) -> list[str]:
+def extract_hashtags(text: str) -> List[str]:
     """
     Extrait les hashtags (#mot) d’un texte.
     """
