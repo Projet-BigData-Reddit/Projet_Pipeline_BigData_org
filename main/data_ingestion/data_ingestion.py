@@ -38,10 +38,11 @@ class DataIngestion:
 
         print("✅ Initialisation complète : Reddit → Kafka prête.")
         # 🔹 NOUVEAU : Initialisation Azure
-        self.azure_service_client = DataLakeServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
+        self.connection_string = AZURE_CONNECTION_STRING # Stockage nécessaire
+        self.azure_service_client = DataLakeServiceClient.from_connection_string(self.connection_string)
         self.container_name = AZURE_CONTAINER_NAME
-        self.buffer = []  # Notre "sac" temporaire
-        self.buffer_limit = 10 # On envoie sur Azure tous les 10 commentaires
+        self.buffer = []  
+        self.buffer_limit = 10
 
 
     # ==============================================================
@@ -137,37 +138,38 @@ class DataIngestion:
 
                     # 3. SI LE SAC EST PLEIN, ON ENVOIE SUR AZURE
                     if len(self.buffer) >= self.buffer_limit:
-                        self.save_to_azure()
+                        self.save_to_datalake()
 
         except KeyboardInterrupt:
             if self.buffer: # Sauvegarde ce qui reste avant de couper
-                self.save_to_azure()
+                self.save_to_datalake()
             print("🛑 Arrêt du script.")
         except Exception as e:
             print(f"⚠️ Erreur stream Reddit : {e}")
             time.sleep(5)
     def save_to_datalake(self):
             """Envoie le buffer vers Azure Data Lake Gen2"""
-            if not self.azure_buffer:
+            if not self.buffer: # Correction du nom : azure_buffer -> buffer
                 return
 
             try:
-                service_client = DataLakeServiceClient.from_connection_string(self.connection_string)
-                file_system_client = service_client.get_file_system_client(file_system=self.container_name)
+                # Utilisation du client déjà initialisé dans le __init__
+                file_system_client = self.azure_service_client.get_file_system_client(file_system=self.container_name)
                 
                 # Création d'un nom de fichier unique par timestamp
                 filename = f"raw_reddit_{int(time.time())}.json"
+                # Assurez-vous que le répertoire "bronze" existe ou Spark ne le verra pas
                 file_client = file_system_client.get_file_client(f"bronze/{filename}")
 
                 # Conversion du buffer en JSON
-                data_to_upload = json.dumps(self.azure_buffer, indent=4)
+                data_to_upload = json.dumps(self.buffer, indent=4) # Correction du nom
                 
                 # Upload
                 file_client.upload_data(data_to_upload, overwrite=True)
-                print(f"📦 Batch de {len(self.azure_buffer)} messages sauvegardé sur Azure Data Lake.")
+                print(f"📦 Batch de {len(self.buffer)} messages sauvegardé sur Azure.")
                 
-                # Vider le buffer après succès
-                self.azure_buffer = [] 
+                # Vider le sac après succès
+                self.buffer = [] 
             except Exception as e:
                 print(f"❌ Erreur de sauvegarde Azure : {e}")
 

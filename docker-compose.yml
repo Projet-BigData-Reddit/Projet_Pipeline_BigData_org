@@ -66,6 +66,8 @@ services:
       dockerfile: Dockerfile
     image: custom-spark:3.5.1
     container_name: spark-master
+    env_file:
+      - .env
     environment:
       SPARK_MODE: master
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"] # commande executer a chaque fois que le conteneur démarre
@@ -85,6 +87,8 @@ services:
       dockerfile: Dockerfile
     image: custom-spark:3.5.1
     container_name: spark-worker
+    env_file:
+      - .env
     environment:
       SPARK_MODE: worker
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
@@ -106,33 +110,49 @@ services:
     ports:
       - "8000:8000"
 
-
+  airflow-init:
+      image: apache/airflow:2.7.1
+      depends_on:
+        - airflow-postgres
+      environment:
+        AIRFLOW__CORE__EXECUTOR: LocalExecutor
+        AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      # Cette commande crée l'utilisateur admin et initialise les tables
+      command: >
+        bash -c "airflow db init &&
+        airflow users create --username admin --firstname admin --lastname admin --role Admin --email admin@example.com --password admin"
   airflow-postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
-    ports:
-      - "5432:5432"
-    volumes:
-      - airflow-db:/var/lib/postgresql/data
+      image: postgres:15
+      container_name: airflow-postgres  # Force le nom pour le DNS Docker
+      environment:
+        POSTGRES_USER: airflow
+        POSTGRES_PASSWORD: airflow
+        POSTGRES_DB: airflow
+      ports:
+        - "5432:5432"
+      volumes:
+        - airflow-db:/var/lib/postgresql/data
 
   airflow-webserver:
     image: apache/airflow:2.7.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     depends_on:
       - airflow-postgres
+    env_file:
+      - .env
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__WEBSERVER__RBAC: 'true'
       AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
-      _PIP_ADDITIONAL_REQUIREMENTS: "requests"
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests azure-storage-file-datalake praw==7.8.1 python-dotenv kafka-python"
     ports:
       - "8091:8080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock # à ajouter pour donner à Airflow le droit d’exécuter des commandes Docker sur ton host.
+      - /var/run/docker.sock:/var/run/docker.sock
       - ./main:/opt/airflow/main 
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
@@ -142,12 +162,17 @@ services:
 
   airflow-scheduler:
     image: apache/airflow:2.7.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     depends_on:
       - airflow-webserver
+    env_file:
+          - .env
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
-      _PIP_ADDITIONAL_REQUIREMENTS: "requests"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests azure-storage-file-datalake praw==7.8.1 python-dotenv kafka-python"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./main:/opt/airflow/main  

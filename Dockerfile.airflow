@@ -1,0 +1,17 @@
+FROM apache/airflow:2.7.1
+
+USER root
+
+RUN groupadd -g 999 docker || true && \
+    usermod -aG docker airflow
+
+USER airflow
+RUN pip install --no-cache-dir \
+    requests \
+    azure-storage-file-datalake \
+    praw==7.8.1 \
+    python-dotenv \
+    kafka-python
+
+USER airflow
+

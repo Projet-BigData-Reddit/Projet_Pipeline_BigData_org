@@ -7,7 +7,7 @@ default_args = {
     'owner': 'Maria',
     'depends_on_past': False,
     'start_date': days_ago(0),
-    'retries': 3,
+    'retries': 1,
     'retry_delay': timedelta(minutes=5),
 }
 
@@ -26,6 +26,11 @@ with DAG(
 
     run_spark = BashOperator(
         task_id='run_spark',
-        bash_command='docker exec spark-master /opt/spark/bin/spark-submit /opt/spark/work-dir/run.py'
+        bash_command=(
+            'docker exec spark-master /opt/spark/bin/spark-submit '
+            '--master spark://spark-master:7077 '
+            '--files /opt/spark/work-dir/config.py '
+            '--conf spark.dynamicAllocation.enabled=false '
+            '/opt/spark/work-dir/run.py'
+        )
     )
-
