@@ -146,6 +146,7 @@ class DataIngestion:
         except Exception as e:
             print(f"⚠️ Erreur stream Reddit : {e}")
             time.sleep(5)
+            
     def save_to_datalake(self):
             """Envoie le buffer vers Azure Data Lake Gen2"""
             if not self.azure_buffer:
