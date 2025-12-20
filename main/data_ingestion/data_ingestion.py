@@ -8,8 +8,9 @@ import re
 from kafka.admin import KafkaAdminClient, NewTopic
 from kafka import KafkaProducer
 from kafka.errors import  NoBrokersAvailable
-from config import CLIENT_ID,CLIENT_SECRET, KEYWORDS, SUBREDDITS,USER_AGENT,USERNAME,KAFKA_TOPIC,KAFKA_BROKER_URL,PARTITIONS,REPLICATION_FACTOR
+from config import CLIENT_ID,CLIENT_SECRET, KEYWORDS, SUBREDDITS,USER_AGENT,USERNAME,KAFKA_TOPIC,KAFKA_BROKER_URL,PARTITIONS,REPLICATION_FACTOR,AZURE_CONNECTION_STRING,AZURE_CONTAINER_NAME
 from utils.utils import contains_keywords
+from azure.storage.filedatalake import DataLakeServiceClient
 
 class DataIngestion:
     """
@@ -35,6 +36,12 @@ class DataIngestion:
         self.producer = self.create_kafka_producer()
 
         print("✅ Initialisation complète : Reddit → Kafka prête.")
+        
+        # 🔹 Config Azure
+        self.azure_buffer = []  # Liste temporaire
+        self.buffer_limit = 10  # On stocke tous les 10 commentaires (ajustable)
+        self.connection_string = AZURE_CONNECTION_STRING
+        self.container_name = AZURE_CONTAINER_NAME
 
 
     # ==============================================================
@@ -125,11 +132,45 @@ class DataIngestion:
                         "score": comment.score
                     }
                     self.send_to_kafka(data)
+                    # 2. Sortie Archivage (Azure Buffer)
+                    self.azure_buffer.append(data)
+                    
+                    # Si on atteint la limite, on envoie vers Azure
+                    if len(self.azure_buffer) >= self.buffer_limit:
+                        self.save_to_datalake()
         except KeyboardInterrupt:
             print("🛑 Stream interrompu manuellement (Ctrl+C).")
+            if self.azure_buffer:
+                self.save_to_datalake()
+                print("🛑 Arrêt.")
         except Exception as e:
             print(f"⚠️ Erreur stream Reddit : {e}")
             time.sleep(5)
+            
+    def save_to_datalake(self):
+            """Envoie le buffer vers Azure Data Lake Gen2"""
+            if not self.azure_buffer:
+                return
+
+            try:
+                service_client = DataLakeServiceClient.from_connection_string(self.connection_string)
+                file_system_client = service_client.get_file_system_client(file_system=self.container_name)
+                
+                # Création d'un nom de fichier unique par timestamp
+                filename = f"raw_reddit_{int(time.time())}.json"
+                file_client = file_system_client.get_file_client(f"bronze/{filename}")
+
+                # Conversion du buffer en JSON
+                data_to_upload = json.dumps(self.azure_buffer, indent=4)
+                
+                # Upload
+                file_client.upload_data(data_to_upload, overwrite=True)
+                print(f"📦 Batch de {len(self.azure_buffer)} messages sauvegardé sur Azure Data Lake.")
+                
+                # Vider le buffer après succès
+                self.azure_buffer = [] 
+            except Exception as e:
+                print(f"❌ Erreur de sauvegarde Azure : {e}")
 
 if __name__ == "__main__":
 

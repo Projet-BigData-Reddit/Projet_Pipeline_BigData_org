@@ -22,3 +22,7 @@ KEYWORDS = [
     "dogecoin", "doge", "cardano", "ada", "solana", "sol", "shiba inu", "shib"
 ]
 
+#Azure connexion
+
+AZURE_CONNECTION_STRING = os.getenv("CHAINE_AZURE_DATALAKE")
+AZURE_CONTAINER_NAME = "reddit-raw-data"
