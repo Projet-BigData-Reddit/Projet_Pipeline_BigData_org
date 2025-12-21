@@ -51,6 +51,7 @@ class RedditInferenceEngine:
             topics_df = self.models['lda'].describeTopics(maxTermsPerTopic=3)
             
             # 3. On collecte les résultats sur le driver pour créer un dictionnaire Python
+            # rows est une liste de row, chaque row est un topic LDA qui contient : topic, termIndeces et termWeights.
             rows = topics_df.collect()
             
             topic_map = {}
@@ -231,7 +232,9 @@ class RedditInferenceEngine:
                 .option("maxOffsetsPerTrigger", 50) \
                 .option("failOnDataLoss", "false") \
                 .load()
-
+            # le champs value est du bytes, CAST(value as STRING) le change depuis bytes en string
+            # from_json(.., schema) : une colonne unique (data par exemple) qui contient un objet avec des champs id et text. [ouvre le JSON et structure les champs]
+            # select("data.*") → crée des colonnes pour chaque champ du message
             json_stream = raw_stream.selectExpr("CAST(value AS STRING)") \
                 .select(from_json(col("value"), schema).alias("data")) \
                 .select("data.*")
