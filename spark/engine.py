@@ -135,29 +135,36 @@ class RedditInferenceEngine:
             
         except Exception as e:
             print(f"⚠️ Erreur Batch {batch_id}: {e}")
-    def save_to_mongo(self, df_spark):
-            """Fonction de secours : Sauvegarde dans MongoDB si Cassandra échoue"""
-            try:
-                # Conversion Spark -> Pandas -> Dictionnaire (Nécessaire pour PyMongo)
-                records = df_spark.toPandas().to_dict(orient='records')
-                
-                if not records:
-                    return
 
-                # Création de l'URI de connexion avec authentification
+    def save_to_mongo(self, df_spark):
+        """Fonction de secours : Sauvegarde dans MongoDB si Cassandra échoue"""
+        try:
+            # 1. Conversion Spark -> Pandas -> Dictionnaire
+            # (Note : Avec tes 32 Go, toPandas() passera sans problème pour tes micro-batchs)
+            records = df_spark.toPandas().to_dict(orient='records')
+
+            if not records:
+                return
+
+            # 2. Construction intelligente de l'URI
+            if config.MONGO_USER and config.MONGO_PASS:
+                # Si identifiants présents (Prod/Azure)
                 uri = f"mongodb://{config.MONGO_USER}:{config.MONGO_PASS}@{config.MONGO_HOST}:{config.MONGO_PORT}/?authSource=admin"
-                
-                # Connexion et insertion
-                client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=2000)
-                db = client[config.MONGO_DB]
-                collection = db[config.MONGO_COLLECTION]
-                
-                collection.insert_many(records)
-                print(f"✅ SAUVEGARDE MONGODB RÉUSSIE : {len(records)} posts sauvés (Fallback).")
-                client.close()
-                
-            except Exception as e:
-                print(f"❌ ÉCHEC CRITIQUE : Impossible de sauver dans MongoDB non plus. Erreur : {e}")
+            else:
+                # Si pas d'identifiants (Ton local actuel)
+                uri = f"mongodb://{config.MONGO_HOST}:{config.MONGO_PORT}"
+
+            # 3. Connexion et insertion
+            client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=2000)
+            db = client[config.MONGO_DB]
+            collection = db[config.MONGO_COLLECTION]
+
+            collection.insert_many(records)
+            print(f"✅ SAUVEGARDE MONGODB RÉUSSIE : {len(records)} posts sauvés (Fallback).")
+            client.close()
+
+        except Exception as e:
+            print(f"❌ ÉCHEC CRITIQUE : Impossible de sauver dans MongoDB non plus. Erreur : {e}")
 
     def process_and_save(self, batch_df, batch_id):
             if batch_df.isEmpty(): return
