@@ -14,7 +14,8 @@ default_args = {
 with DAG(
     'reddit_pipeline',
     default_args=default_args,
-    schedule_interval='*/10 * * * *',
+    schedule_interval=None,      # <--- (Lancement manuel pour la démo)
+    max_active_runs=1,           # <--- (Un seul run à la fois)
     catchup=False,
     description="Pipeline Kafka -> Spark -> Cassandra/MongoDB"
 ) as dag:
@@ -29,6 +30,7 @@ with DAG(
         bash_command=(
             'docker exec spark-master /opt/spark/bin/spark-submit '
             '--master spark://spark-master:7077 '
+            '--py-files /opt/spark/work-dir/config.py,/opt/spark/work-dir/preprocessor.py,/opt/spark/work-dir/loader.py '
             '--files /opt/spark/work-dir/config.py '
             '--conf spark.dynamicAllocation.enabled=false '
             '/opt/spark/work-dir/run.py'
