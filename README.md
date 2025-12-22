@@ -117,6 +117,21 @@ You can monitor the health and status of the pipeline using the following interf
 
 ---
 
+## 👥 Authors
+
+This project was jointly designed and developed by:
+
+* **[EL RHERBI Mohamed Amine]** - [GitHub Profile](https://github.com/medamineelrherbi)
+* **[CHATRAOUI Hamza]** -   [GitHub Profile](https://github.com/chatraouihamza)
+* **[DHAH Chaimaa]** -   [GitHub Profile](https://github.com/ChaimaaDhah)
+* **[EL Houdaigui Maria]** -  [GitHub Profile](https://github.com/mariaelhoudaigui)
+* **[AMMAM Yassir]** - [GitHub Profile](https://github.com/chatraouihamza)
+
+
+
+
+*We built this entire pipeline together from scratch.*
+
 ## 📝 License
 
 This project is open-source and available under the [MIT License](https://opensource.org/licenses/MIT).
