@@ -126,7 +126,7 @@ This project was jointly designed and developed by:
 * **[CHATRAOUI Hamza]** -   [GitHub Profile](https://github.com/chatraouihamza)
 * **[DHAH Chaimaa]** -   [GitHub Profile](https://github.com/ChaimaaDhah)
 * **[EL Houdaigui Maria]** -  [GitHub Profile](https://github.com/mariaelhoudaigui)
-* **[AMMAM Yassir]** - [GitHub Profile](https://github.com/chatraouihamza)
+* **[AMMAM Yassir]** - [GitHub Profile](https://github.com/yassiraamam)
 
 *We built this entire pipeline together from scratch.*
 
