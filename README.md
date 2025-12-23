@@ -8,7 +8,7 @@ This architecture features a hybrid storage solution (Data Lake, NoSQL) and a ro
 
 ## 🏗 Architecture Diagram
 
-![System Architecture](architecture.png)
+![System Architecture](https://github.com/user-attachments/assets/da6c7454-4c74-430b-aa82-93e14c14c122)
 
 *The pipeline orchestrates data flow from Reddit to storage layers, managed by Docker Compose.*
 
@@ -26,15 +26,15 @@ This pipeline is designed to detect viral financial trends on Reddit (e.g., r/Bi
     * **Topic Modeling:** Identifies subjects dynamically using LDA.
     * **Virality Prediction:** Uses Random Forest to predict if a post will become "HOT".
 4.  **Storage:**
-    * **Primary Storage:** **MongoDB** (Running on Host Machine).
-        * *Status:* Active Default.
-    * **Fallback Storage:** **Apache Cassandra** (Docker Container).
-        * *Status:* Failover (Triggered automatically if MongoDB is unreachable).
+    * **Primary Storage:** **Apache Cassandra** (Docker Container).
+        * *Status:* Active Default. Optimized for high-throughput, write-heavy streaming workloads.
+    * **Fallback Storage:** **MongoDB** (Running on Host Machine/Container).
+        * *Status:* Failover (Triggered automatically if Cassandra is unreachable).
 
-> **⚠️ Architectural Note:**
-> We acknowledge that **Apache Cassandra** is the industry standard for high-throughput write-heavy workloads and is theoretically better optimized for this pipeline's analytics.
->
-> However, due to hardware resource limitations in the local development environment, running a full Cassandra node within a Docker container causes significant system blocking. Consequently, **MongoDB** (running natively on the host machine) is utilized as the primary storage to ensure smooth performance, while Cassandra is retained in the architecture to demonstrate the implementation of a **fault-tolerance mechanism**.
+> **💡 Architectural Note:**
+> In this production-ready design, **Apache Cassandra** serves as the primary sink due to its linear scalability and excellence in handling high-velocity time-series data typical of financial streams. 
+> 
+> To ensure maximum reliability, we have implemented **MongoDB** as a secondary fallback. This ensures that even during periods of high cluster pressure or potential node failure in Cassandra, the data stream remains uninterrupted and is safely persisted in the document store.
 
 5.  **Orchestration:** Apache Airflow manages the workflow.
 6.  **Visualization:** PowerBI connected to the database.
@@ -55,9 +55,9 @@ This pipeline is designed to detect viral financial trends on Reddit (e.g., r/Bi
 * **Spark ML:** Random Forest, LDA, Word2Vec, CountVectorizer.
 
 ### Storage
+* **Apache Cassandra:** Primary NoSQL database for real-time analytics.
+* **MongoDB:** Document store used as a robust fallback mechanism.
 * **Azure Data Lake Gen2:** Raw storage / Archiving.
-* **Apache Cassandra:** Optimized for write-heavy streaming data (Fallback mechanism).
-* **MongoDB:** Document store.
 
 ---
 
@@ -71,7 +71,8 @@ The infrastructure is defined in `docker-compose.yml`:
 | **spark-master** | Spark Master Node | 8080 (UI) / 7077 |
 | **spark-worker** | Spark Worker Node | 8081 |
 | **sentiment-api** | Python FastAPI (Inference) | 8000 |
-| **cassandra** | NoSQL Database | 9042 |
+| **cassandra** | Primary NoSQL Sink | 9042 |
+| **mongodb** | Fallback Database | 27017 |
 | **airflow-webserver** | Airflow UI | 8091 |
 | **airflow-scheduler** | Airflow Scheduler | - |
 
@@ -92,7 +93,7 @@ Running on Spark, this engine handles the complexity:
     * 🔥 **HOT** (Score > 5)
     * 📈 **UP** (Score > 2)
     * 💤 **LOW** (Else)
-* **Fault Tolerance:** Implements a `try-catch` block. If writing to Cassandra fails, the batch is automatically redirected and saved to MongoDB to prevent data loss.
+* **Fault Tolerance:** Implements a `try-catch` block for data persistence. The system attempts to write to **Cassandra** first. If the connection fails or a timeout occurs, the batch is automatically redirected to **MongoDB**, ensuring zero data loss during ingestion.
 
 ---
 
@@ -126,9 +127,6 @@ This project was jointly designed and developed by:
 * **[DHAH Chaimaa]** -   [GitHub Profile](https://github.com/ChaimaaDhah)
 * **[EL Houdaigui Maria]** -  [GitHub Profile](https://github.com/mariaelhoudaigui)
 * **[AMMAM Yassir]** - [GitHub Profile](https://github.com/chatraouihamza)
-
-
-
 
 *We built this entire pipeline together from scratch.*
 
