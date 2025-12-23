@@ -8,7 +8,7 @@ This architecture features a hybrid storage solution (Data Lake, NoSQL) and a ro
 
 ## 🏗 Architecture Diagram
 
-![System Architecture](https://github.com/user-attachments/assets/da6c7454-4c74-430b-aa82-93e14c14c122)
+![System Architecture](https://github.com/user-attachments/assets/cfb779a3-ab07-47a9-9c66-ec211e40fe84)
 
 *The pipeline orchestrates data flow from Reddit to storage layers, managed by Docker Compose.*
 
@@ -31,10 +31,12 @@ This pipeline is designed to detect viral financial trends on Reddit (e.g., r/Bi
     * **Fallback Storage:** **MongoDB** (Running on Host Machine/Container).
         * *Status:* Failover (Triggered automatically if Cassandra is unreachable).
 
-> **💡 Architectural Note:**
+> > **💡 Architectural Note:**
 > In this production-ready design, **Apache Cassandra** serves as the primary sink due to its linear scalability and excellence in handling high-velocity time-series data typical of financial streams. 
 > 
 > To ensure maximum reliability, we have implemented **MongoDB** as a secondary fallback. This ensures that even during periods of high cluster pressure or potential node failure in Cassandra, the data stream remains uninterrupted and is safely persisted in the document store.
+>
+> **Why MongoDB for Fallback?** Unlike column-oriented databases like ClickHouse or Cassandra, which enforce a strict **Schema-on-write** policy, MongoDB is **schemaless**. In a real-time streaming context, if the Reddit API evolves or modifies its data structure, a rigid schema might reject the ingestion, causing data loss. MongoDB acts as a "highly-permissive" safety net, gracefully accepting structural variations to ensure **Zero Data Loss** until the primary system is restored or updated.
 
 5.  **Orchestration:** Apache Airflow manages the workflow.
 6.  **Visualization:** PowerBI connected to the database.
